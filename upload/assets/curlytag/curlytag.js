@@ -92,6 +92,9 @@ export class CurlyTag {
                 'else',
                 'endunless'
             ],
+            macro: [
+                'endmacro'
+            ],
         };
 
         this.filter = {
@@ -530,7 +533,7 @@ export class CurlyTag {
     async fetch(path) {
         let file = this.directory + path + '.html';
         let namespace = '';
-        let parts = path.split('/');
+        let parts = path.replace(/\/+$/, '').split('/');
 
         for (let part of parts) {
             if (!namespace) {
@@ -539,8 +542,8 @@ export class CurlyTag {
                 namespace += '/' + part;
             }
 
-            if (this.path.has(namespace)) {
-                file = this.path.get(namespace) + path.substr(namespace.length) + '.html';
+            if (this.path.has(namespace + '/')) {
+                file = this.path.get(namespace + '/') + path.substr(namespace.length) + '.html';
             }
         }
 
@@ -578,6 +581,16 @@ export class CurlyTag {
         let stack = [];
         let output = '';
 
+        // Handlers only receive the current token, not the full array — macro
+        // definitions need the latter to capture their own body as a token
+        // slice (see handleMacro), so stash it for the duration of this pass.
+        // Saved/restored (rather than just set) because calling a macro
+        // recurses into process() with the macro's own body tokens.
+
+        let previous_tokens = this._tokens;
+
+        this._tokens = tokens;
+
         while (index < tokens.length) {
             let token = tokens[index];
             let top = stack[stack.length - 1];
@@ -598,6 +611,10 @@ export class CurlyTag {
                 code = top?.output;
 
                 stack.pop();
+
+                // Re-read the top of stack now that the output frame is gone,
+                // so a capture/filter block beneath it is correctly detected below.
+                top = stack[stack.length - 1];
             }
 
             if (token.type == 'text') {
@@ -644,6 +661,8 @@ export class CurlyTag {
         if (pending?.type === 'output' && pending.output != null) {
             output += pending.output;
         }
+
+        this._tokens = previous_tokens;
 
         return output;
     }
@@ -755,7 +774,7 @@ export class CurlyTag {
                 return value !== '';
                 break;
             case 'number':
-                return value >= 0;
+                return value !== 0 && !Number.isNaN(value);
                 break;
             case 'boolean':
                 return value;
@@ -770,12 +789,6 @@ export class CurlyTag {
         }
 
         return false;
-    }
-
-    describeToken(token) {
-        let location = `line ${token.line} column ${token.column}`;
-
-        return token.raw ? `${location}: ${token.raw}` : location;
     }
 
     parseOperator(code) {
@@ -796,10 +809,28 @@ export class CurlyTag {
         return code;
     }
 
+    /**
+     * Expands numeric range literals, e.g. `(1...5)` or `(5...1)`, into an
+     * actual array literal (`[1,2,3,4,5]`), so they can be used directly
+     * inside an expression — e.g. `{% for i in (1...5) %}`. Quoted strings
+     * are left untouched so a `...` inside a string literal isn't matched.
+     */
     parseRange(code) {
-        let regex = new RegExp(`("[^"]*"|'[^']*'|\`[^\`]*\`)\((d+|)\.\.\.([])`, 'g');
+        let regex = /("[^"]*"|'[^']*'|`[^`]*`)|\((-?\d+)\s*\.\.\.\s*(-?\d+)\)/g;
 
+        return code.replace(regex, (match, quoted, start, end) => {
+            // Leave quoted strings untouched — only the unquoted alternative matched a range.
+            if (quoted !== undefined) return quoted;
 
+            let from = Number(start);
+            let to = Number(end);
+            let step = from <= to ? 1 : -1;
+            let length = Math.abs(to - from) + 1;
+
+            let values = Array.from({ length }, (_, i) => from + i * step);
+
+            return `[${values.join(',')}]`;
+        });
     }
 
     /**
@@ -859,7 +890,9 @@ export class CurlyTag {
         let match = token.value.match(/([^|]+?)\s*(?:\s*\|\s*(.+))?$/);
 
         if (!match) {
-            console.log(`[Template] Invalid output ${this.describeToken(token)}`);
+            console.log(`[Template] Invalid output ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
+
+            return '';
         }
 
         let [, name, filter] = match;
@@ -895,7 +928,7 @@ export class CurlyTag {
         let match = token.value.match(/^(?:assign|set)\s(\w+)\s=\s([^|]+?)\s*(?:\s*\|\s*(.+))?$/);
 
         if (!match) {
-            console.log(`[Template] Invalid '${token.tag}' syntax ${this.describeToken(token)}`);
+            console.log(`[Template] Invalid '${token.tag}' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -917,7 +950,7 @@ export class CurlyTag {
         let match = token.value.match(/^include\s(.+)$/);
 
         if (!match) {
-            console.warn(`[Template] Invalid 'include' syntax ${this.describeToken(token)}`);
+            console.warn(`[Template] Invalid 'include' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -934,7 +967,7 @@ export class CurlyTag {
         let match = token.value.match(/^echo\s([^|]+?)\s*(?:\s*\|\s*(.+))?$/);
 
         if (!match) {
-            console.log(`[Template] Invalid echo ${this.describeToken(token)}`);
+            console.log(`[Template] Invalid echo ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -963,7 +996,7 @@ export class CurlyTag {
         let match = token.value.match(/^if\s(.+)$/);
 
         if (!match) {
-            console.log(`[Template] Invalid 'if' syntax ${this.describeToken(token)}`);
+            console.log(`[Template] Invalid 'if' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             stack.push({
                 type: 'if',
@@ -998,7 +1031,7 @@ export class CurlyTag {
         let top = stack[stack.length - 1];
 
         if (!top || top.type !== 'if') {
-            console.log(`[Template] Unexpected 'if' tag ${this.describeToken(token)}`);
+            console.log(`[Template] Unexpected 'if' tag ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1010,7 +1043,7 @@ export class CurlyTag {
         let match = token.value.match(/^elseif\s(.+)$/);
 
         if (!match) {
-            console.log(`[Template] Invalid 'elseif' syntax ${this.describeToken(token)}`);
+            console.log(`[Template] Invalid 'elseif' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1018,7 +1051,7 @@ export class CurlyTag {
         let top = stack[stack.length - 1];
 
         if (!top || top.type !== 'if') {
-            console.log(`[Template] Unexpected 'elseif' tag ${this.describeToken(token)}`);
+            console.log(`[Template] Unexpected 'elseif' tag ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1042,7 +1075,7 @@ export class CurlyTag {
         let top = stack[stack.length - 1];
 
         if (!top || (top.type !== 'if' && top.type !== 'unless' && top.type !== 'case' && top.type !== 'for')) {
-            console.log(`[Template] Unexpected 'else' tag ${this.describeToken(token)}`);
+            console.log(`[Template] Unexpected 'else' tag ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1062,7 +1095,7 @@ export class CurlyTag {
         let match = token.value.match(/^unless\s(.+)$/);
 
         if (!match) {
-            console.log(`[Template] Invalid 'unless' syntax ${this.describeToken(token)}`);
+            console.log(`[Template] Invalid 'unless' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1087,7 +1120,7 @@ export class CurlyTag {
         let top = stack[stack.length - 1];
 
         if (!top || top.type !== 'unless') {
-            console.log(`[Template] Unexpected 'endunless' tag ${this.describeToken(token)}`);
+            console.log(`[Template] Unexpected 'endunless' tag ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1099,7 +1132,7 @@ export class CurlyTag {
         let match = token.value.match(/^for\s(.*)\sin\s([^|]+?)\s*(?:\s*\|\s*(.+))?$/);
 
         if (!match) {
-            console.log(`[Template] Invalid 'for' syntax ${this.describeToken(token)}`);
+            console.log(`[Template] Invalid 'for' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1107,9 +1140,15 @@ export class CurlyTag {
         let [, name, key, filter] = match;
 
         // Match any global function
-        let items = this.evaluate(key, ctx);
+        let items = this.evaluate(this.parseRange(key), ctx);
 
-        if (items === null || typeof items !== 'object') {
+        if (items instanceof Map) {
+            // `for key, value in someMap` iterates [key, value] entry pairs.
+            items = [ ...items.entries() ];
+        } else if (items !== null && typeof items === 'object' && !Array.isArray(items)) {
+            // `for key, value in someObject` iterates [key, value] entry pairs.
+            items = Object.entries(items);
+        } else if (items === null || typeof items !== 'object') {
             items = [];
         }
 
@@ -1118,20 +1157,18 @@ export class CurlyTag {
             items = this.parseFilter(items, filter, ctx);
         }
 
-        let endIndex = token.loopEnd ?? token.end;
-
         stack.push({
             type: 'for',
             name: name,
             items: items,
             index: -1,
             start: index + 1,
-            end: endIndex,
+            end: token.end,
             active: items.length > 0,
-            parent: { ...ctx },
+            parent: { ...ctx }
         });
 
-        return items.length > 0 ? endIndex : token.end;
+        return token.end;
     }
 
     handleEndFor(token, stack, ctx, index) {
@@ -1139,7 +1176,7 @@ export class CurlyTag {
         let top = stack[stack.length - 1];
 
         if (top == undefined || top.type !== 'for') {
-            console.log(`[Template] Unexpected 'endfor' ${this.describeToken(token)}`);
+            console.log(`[Template] Unexpected 'endfor' ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1152,28 +1189,22 @@ export class CurlyTag {
 
             let pos = top.name.indexOf(',');
 
-            //console.log('ctx');
-            //console.log('pos', pos);
-
-            //console.log('top.index', top.items[top.index]);
-
             if (pos === -1) {
-                ctx[top.name] = top.items[top.index]; // ← top.name (not top.name)
+                ctx[top.name] = top.items[top.index];
             } else {
+                let key = top.name.slice(0, pos).trim();
+                let value = top.name.slice(pos + 1).trim();
+                let entry = top.items[top.index];
 
-                //let test = { ...top.items[top.index] }
-
-                //ctx = Object.assign(ctx, top.items[top.index]); // ← top.name (not top.name)
-
-                //console.log(ctx);
-
-                //this.evaluate('[' + top.name]', ctx);
-
-                //let keys = top.name.split(',');
-
-                //for (let key of keys) {
-
-                //}
+                if (Array.isArray(entry)) {
+                    // [key, value] pair — from a Map or Object source (see handleFor).
+                    ctx[key] = entry[0];
+                    ctx[value] = entry[1];
+                } else {
+                    // Plain array iterated as "index, value".
+                    ctx[key] = top.index;
+                    ctx[value] = entry;
+                }
             }
 
             ctx.loop = {
@@ -1192,7 +1223,15 @@ export class CurlyTag {
         // Loop finished → cleanup
         stack.pop();
 
-        delete ctx[top.name];
+        let pos = top.name.indexOf(',');
+
+        if (pos === -1) {
+            delete ctx[top.name];
+        } else {
+            delete ctx[top.name.slice(0, pos).trim()];
+            delete ctx[top.name.slice(pos + 1).trim()];
+        }
+
         delete ctx.loop;
     }
 
@@ -1232,7 +1271,15 @@ export class CurlyTag {
         // Loop finished → cleanup
         stack.pop();
 
-        delete ctx[top.name];
+        let pos = top.name.indexOf(',');
+
+        if (pos === -1) {
+            delete ctx[top.name];
+        } else {
+            delete ctx[top.name.slice(0, pos).trim()];
+            delete ctx[top.name.slice(pos + 1).trim()];
+        }
+
         delete ctx.loop;
 
         return top.end + 1;
@@ -1242,7 +1289,7 @@ export class CurlyTag {
         let match = token.value.match(/^case\s([\w.]+)$/);
 
         if (!match) {
-            console.log(`[Template] Invalid 'case' syntax ${this.describeToken(token)}`);
+            console.log(`[Template] Invalid 'case' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1258,7 +1305,7 @@ export class CurlyTag {
         let match = token.value.match(/^when\s(.+)$/);
 
         if (!match) {
-            console.log(`[Template] Invalid 'when' syntax ${this.describeToken(token)}`);
+            console.log(`[Template] Invalid 'when' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1266,7 +1313,7 @@ export class CurlyTag {
         let top = stack[stack.length - 1];
 
         if (!top || top.type !== 'case') {
-            console.log(`[Template] Unexpected 'when' tag ${this.describeToken(token)}`);
+            console.log(`[Template] Unexpected 'when' tag ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1281,7 +1328,7 @@ export class CurlyTag {
         let top = stack[stack.length - 1];
 
         if (!top || top.type !== 'case') {
-            console.log(`[Template] Unexpected 'case' tag ${this.describeToken(token)}`);
+            console.log(`[Template] Unexpected 'case' tag ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1293,7 +1340,7 @@ export class CurlyTag {
         let match = token.value.match(/^capture\s(.+)$/);
 
         if (!match) {
-            console.warn(`[Template] Invalid 'capture' syntax ${this.describeToken(token)}`);
+            console.warn(`[Template] Invalid 'capture' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1309,7 +1356,7 @@ export class CurlyTag {
         let top = stack[stack.length - 1];
 
         if (!top || top.type !== 'capture') {
-            console.log(`[Template] Unexpected 'endcapture' tag ${this.describeToken(token)}`);
+            console.log(`[Template] Unexpected 'endcapture' tag ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1330,7 +1377,7 @@ export class CurlyTag {
         let top = stack[stack.length - 1];
 
         if (!top || top.type !== 'raw') {
-            console.log(`[Template] Unexpected 'raw' tag ${this.describeToken(token)}`);
+            console.log(`[Template] Unexpected 'raw' tag ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1348,7 +1395,7 @@ export class CurlyTag {
         let top = stack[stack.length - 1];
 
         if (!top || top.type !== 'comment') {
-            console.log(`[Template] Unexpected 'comment' tag ${this.describeToken(token)}`);
+            console.log(`[Template] Unexpected 'comment' tag ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1360,7 +1407,7 @@ export class CurlyTag {
         let match = token.value.match(/^filter\s(\w+)$/);
 
         if (!match) {
-            console.log(`[Template] Invalid 'filter' syntax ${this.describeToken(token)}`);
+            console.log(`[Template] Invalid 'filter' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1376,7 +1423,7 @@ export class CurlyTag {
         let top = stack[stack.length - 1];
 
         if (!top || top.type !== 'capture') {
-            console.log(`[Template] Unexpected 'endfilter' tag ${this.describeToken(token)}`);
+            console.log(`[Template] Unexpected 'endfilter' tag ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
@@ -1389,27 +1436,204 @@ export class CurlyTag {
         });
     }
 
+    /**
+     * Define a reusable template fragment with parameters.
+     *
+     * {% macro greet(name, greeting = 'Hello') %}
+     *   {{ greeting }}, {{ name }}!
+     * {% endmacro %}
+     *
+     * The body never renders inline where it's defined — only when called,
+     * e.g. {{ greet('Daniel') }} or {{ greet('Daniel', 'Hi') }}.
+     */
     handleMacro(token, stack, ctx, index) {
+        let match = token.value.match(/^macro\s+(\w+)\s*\(([^)]*)\)\s*$/);
 
+        if (!match) {
+            console.log(`[Template] Invalid 'macro' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
+
+            stack.push({ type: 'macro' });
+
+            return token.end;
+        }
+
+        let [, name, paramList] = match;
+
+        let params = paramList.trim() ? paramList.split(',').map((param) => {
+            let [paramName, defaultExpression] = param.split('=');
+
+            return {
+                name: paramName.trim(),
+                default: defaultExpression !== undefined ? defaultExpression.trim() : undefined,
+            };
+        }) : [];
+
+        this.macro.set(name, {
+            params: params,
+            // The macro's body, captured from the current template's own
+            // token stream — see the `this._tokens` note in process().
+            tokens: this._tokens.slice(index + 1, token.end),
+        });
+
+        stack.push({ type: 'macro' });
+
+        // Skip straight to the matching endmacro — the body only renders
+        // (via callMacro/process) when the macro is actually called.
+        return token.end;
     }
 
     handleEndMacro(token, stack, ctx, index) {
+        let top = stack[stack.length - 1];
 
+        if (!top || top.type !== 'macro') {
+            console.log(`[Template] Unexpected 'endmacro' tag ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
+
+            return;
+        }
+
+        stack.pop();
     }
 
-    handleImport(token, stack, ctx, index) {
+    /**
+     * Renders a macro's captured body with its parameters bound to the
+     * given (unevaluated) argument-list expression, e.g. `'Daniel', 'Hi'`
+     * from a call like `greet('Daniel', 'Hi')`.
+     */
+    callMacro(macro, argsExpression, ctx) {
+        let args = this.evaluate('[' + argsExpression + ']', ctx);
 
+        if (!Array.isArray(args)) {
+            args = [];
+        }
+
+        // A macro's body renders against its own isolated scope (just its
+        // parameters) rather than the caller's context, so it can't
+        // accidentally read or clobber unrelated variables.
+        let scope = {};
+
+        macro.params.forEach((param, i) => {
+            let value = args[i];
+
+            if (value === undefined && param.default !== undefined) {
+                value = this.evaluate(param.default, ctx);
+            }
+
+            scope[param.name] = value;
+        });
+
+        return this.process(macro.tokens, scope);
     }
 
-    handleFrom(token, stack, ctx, index) {
+    /**
+     * Like `evaluate()`, but first checks whether the expression is a call
+     * to a known macro — `name(args)` for a locally defined/`from`-imported
+     * macro, or `alias.name(args)` for one brought in via `{% import %}` —
+     * and if so renders it instead of treating it as a plain JS expression.
+     */
+    evaluateExpression(expression, ctx) {
+        let namespaced = expression.match(/^(\w+)\.(\w+)\(([\s\S]*)\)$/);
+        let plain = !namespaced && expression.match(/^(\w+)\(([\s\S]*)\)$/);
 
+        if (namespaced) {
+            let [, alias, name, args] = namespaced;
+            let macro = this._imported[alias]?.get(name);
+
+            if (macro) return this.callMacro(macro, args, ctx);
+        } else if (plain) {
+            let [, name, args] = plain;
+            let macro = this.macro.get(name);
+
+            if (macro) return this.callMacro(macro, args, ctx);
+        }
+
+        return this.evaluate(expression, ctx);
+    }
+
+    /**
+     * Fetches another template file and extracts every macro it defines,
+     * without rendering its other content, by swapping in a scratch macro
+     * registry for the duration of the (otherwise ordinary) render pass.
+     *
+     * NOTE: like handleInclude, this is async but process() invokes
+     * handlers synchronously (without awaiting), so — until that's
+     * addressed — an import/from tag's effect may not be ready before
+     * rendering continues past it. Treat this as matching handleInclude's
+     * existing limitation rather than a new one introduced here.
+     */
+    async extractMacros(path) {
+        let tokens = this.tokenize(await this.fetch(path));
+
+        let previous_macro = this.macro;
+
+        this.macro = new Map();
+
+        this.process(tokens, {});
+
+        let extracted = this.macro;
+
+        this.macro = previous_macro;
+
+        return extracted;
+    }
+
+    /**
+     * {% import 'macros/forms.html' as forms %}
+     *
+     * Every macro in the imported file becomes callable as
+     * {{ forms.name(args) }}.
+     */
+    async handleImport(token, stack, ctx, index) {
+        let match = token.value.match(/^import\s+(['"])(.+?)\1\s+as\s+(\w+)$/);
+
+        if (!match) {
+            console.log(`[Template] Invalid 'import' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
+
+            return;
+        }
+
+        let [, , path, alias] = match;
+
+        this._imported[alias] = await this.extractMacros(path);
+    }
+
+    /**
+     * {% from 'macros/forms.html' import input, select as dropdown %}
+     *
+     * Named macros become callable directly, without a namespace prefix:
+     * {{ input(...) }}, {{ dropdown(...) }}.
+     */
+    async handleFrom(token, stack, ctx, index) {
+        let match = token.value.match(/^from\s+(['"])(.+?)\1\s+import\s+(.+)$/);
+
+        if (!match) {
+            console.log(`[Template] Invalid 'from' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
+
+            return;
+        }
+
+        let [, , path, importList] = match;
+
+        let namespace = await this.extractMacros(path);
+
+        importList.split(',').forEach((entry) => {
+            let [name, alias] = entry.trim().split(/\s+as\s+/);
+
+            name = name.trim();
+            alias = (alias ?? name).trim();
+
+            if (namespace.has(name)) {
+                this.macro.set(alias, namespace.get(name));
+            } else {
+                console.log(`[Template] Macro '${name}' not found while importing from '${path}'`);
+            }
+        });
     }
 
     handleCycle(token, stack, ctx, index) {
         let match = token.value.match(/^cycle\s(.*)/);
 
         if (!match) {
-            console.warn(`[Template] Invalid 'cycle' syntax ${this.describeToken(token)}`);
+            console.warn(`[Template] Invalid 'cycle' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
 
             return;
         }
