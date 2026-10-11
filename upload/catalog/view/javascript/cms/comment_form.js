@@ -1,9 +1,9 @@
 import { WebComponent } from '../index.js';
 import { loader, ajax, customer } from '../index.js';
 
-customElements.define('cms-comment', class extends WebComponent {
+customElements.define('comment-form', class extends WebComponent {
     async render() {
-
+        return loader.template('cms/comment_form', [ language ]);
     }
 
     refresh() {
@@ -30,22 +30,21 @@ customElements.define('cms-comment', class extends WebComponent {
                 console.log(thrownError + "\r\n" + xhr.statusText + "\r\n" + xhr.responseText);
             }
         });
-
     }
 
-    submit(e) {
+    async handleSubmit(e) {
         e.preventDefault();
 
         let form = new FormData(this.form);
 
-        ajax.post('index.php?route=cms/comment', form, {
-            beforeSend: function() {
-                //ref.get('button-comment').button('loading');
+        await ajax.post('action.php?route=cms/comment', form, {
+            handleSend: () => {
+                this.form.state.set('submitting', true);
             },
-            complete: function() {
-                //ref.get('button-comment').button('reset');
+            handleComplete: () => {
+                this.form.state.set('submitting', false);
             },
-            success: function(json) {
+            handleSuccess: (json) => {
                 console.log(json);
 
                 $('.alert-dismissible').remove();
@@ -72,7 +71,7 @@ customElements.define('cms-comment', class extends WebComponent {
                     $($('#form-comment').attr('data-oc-trigger')).trigger('click');
                 }
             },
-            error: function(xhr, ajaxOptions, thrownError) {
+            handleError: (xhr, ajaxOptions, thrownError)=> {
                 console.log(thrownError + "\r\n" + xhr.statusText + "\r\n" + xhr.responseText);
             }
         });
@@ -109,14 +108,13 @@ customElements.define('cms-comment', class extends WebComponent {
 
         $.ajax({
             url: $(element).val(),
-            dataType: 'json',
-            beforeSend: function() {
+            handleSend: () => {
                 $(element).button('loading');
             },
-            complete: function() {
+            handleComplete: () => {
                 $(element).button('reset');
             },
-            success: function(json) {
+            handleSuccess: (json) => {
                 $('.alert-dismissible').remove();
 
                 if (json['error']) {
@@ -127,7 +125,7 @@ customElements.define('cms-comment', class extends WebComponent {
                     $('#alert').prepend('<div class="alert alert-success alert-dismissible"><i class="fa-solid fa-circle-exclamation"></i> ' + json.get('success') + '</ui-alert>');
                 }
             },
-            error: function(xhr, ajaxOptions, thrownError) {
+            handleError: (xhr, ajaxOptions, thrownError) => {
                 console.log(thrownError + "\r\n" + xhr.statusText + "\r\n" + xhr.responseText);
             }
         });

@@ -11,7 +11,11 @@ const language = await loader.language('information/contact');
 const locations = await loader.storage('localisation/location');
 
 export default class InformationContact extends WebComponent {
-    token = '';
+    constructor() {
+        super();
+
+        this.token = '';
+    }
 
     async render() {
         let data = new Map();
@@ -29,65 +33,44 @@ export default class InformationContact extends WebComponent {
         return loader.template('information/contact', [ data, language, config ]);
     }
 
-    onConnect() {
-        this.token = ajax.get('action.php?route=information/contact.token&language=' + local.get('language'));
+    async handleConnect() {
+        let json = await ajax.get('action.php?route=information/contact.token&language=' + local.get('language'));
+
+        if (json.has('token')) {
+            this.token = json.get('token');
+        }
     }
 
-    onSubmit(e) {
+    async handleSubmit(e) {
         e.preventDefault();
 
         let form = new FormData(this.form);
 
-        ajax.post('action.php?route=information/contact.send&language=' + local.get('language') + '&customer_token=' + customer.getToken(), form, {
-            beforeSend: (request) => {
-                this.button.state('loading');
+        await ajax.post('action.php?route=information/contact.send&language=' + local.get('language') + '&customer_token=' + customer.getToken(), form, {
+            handleSend: () => {
+                this.form.state.set('submitting', true);
             },
-            onComplete: () => {
-                this.button.state('reset');
+            handleComplete: () => {
+                this.form.state.set('submitting', false);
             },
-            onSuccess: this.success.bind(this),
-            onError: (e) => {
+            handleSuccess: (json)=> {
+                this.form.state.clear();
+
+                if (json.has('error')) {
+                    this.form.state.set('error', json.get('error'));
+                }
+
+                // Display success message
+                if (json.has('success')) {
+                    this.state.set('success', json.get('success'));
+
+                    this.update();
+                }
+            },
+            handleError: (e) => {
                 console.log('onError', e);
             }
         });
-    }
-
-    success(json) {
-        // Remove past error classes from inputs
-        this.form.querySelectorAll('.is-invalid').forEach(element => element.classList.remove('is-invalid'));
-        this.form.querySelectorAll('.invalid-feedback').forEach(element => element.classList.remove('d-block'));
-
-        // Display error messages
-        if (json.has('error')) {
-            for (let key in json.get('error')) {
-                let value = key.replaceAll('_', '-');
-
-                let input = this.form.querySelector('#input-' + value);
-
-                if (input) {
-                    input.classList.add('is-invalid');
-
-                    // If the element has inputs inside.
-                    input.querySelectorAll('.form-control, .form-select, .form-check-input, .form-check-label').forEach(element => element.classList.add('is-invalid'));
-                }
-
-                let error = this.form.querySelector('#error-' + value);
-
-                if (error) {
-                    error.classList.add('d-block');
-                }
-            }
-        }
-
-        // Display success message
-        if (json.has('success')) {
-            this.alert.prepend('<ui-alert type="success">' + json.get('success') + '</ui-alert>');
-
-            //console.log(Object.fromEntries(form));
-            for (let product of json.get('products')) {
-                cart.add(product);
-            }
-        }
     }
 }
 

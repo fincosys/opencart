@@ -1,5 +1,5 @@
 export default class Storage {
-    static instance;
+    static instance = null;
 
     constructor() {
         this.directory = '';
@@ -16,9 +16,7 @@ export default class Storage {
     }
 
     async fetch(path) {
-        if (this.cache.has(path)) {
-            return this.cache.get(path);
-        }
+        if (this.cache.has(path)) return this.cache.get(path);
 
         let file = this.directory + path + '.json';
         let namespace = '';
@@ -49,7 +47,7 @@ export default class Storage {
 
             return this.cache.get(path);
         } else {
-            console.log('Could not load storage file ' + path);
+            throw new Error(`[Storage] Could not load storage file ${path}!`);
         }
 
         return undefined;

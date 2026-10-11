@@ -1,6 +1,7 @@
 import { Binder } from './binder.js';
+import { Global } from './global.js';
 import { State } from './state.js';
-import { stylesheet } from './stylesheet.js';
+import { Style } from './style.js';
 
 /**
  * WebComponent
@@ -8,7 +9,7 @@ import { stylesheet } from './stylesheet.js';
  * A minimal base class for building web components with:
  *   - Automatic shadow DOM setup
  *   - Template + styles rendering
- *   - Automatic ref/event binding via ElementBinder (data-ref / data-on)
+ *   - Automatic ref/event binding via Binder (@ref / @click / @submit, etc...)
  *   - Clean lifecycle hooks (onConnect, onDisconnect, onAttributeChange)
  *
  * Usage:
@@ -24,7 +25,7 @@ import { stylesheet } from './stylesheet.js';
  *     }
  *
  *     template() {
- *       return `<button data-ref="btn" data-on="click:increment">+1</button><span data-ref="display">0</span>`;
+ *       return `<button @ref="btn" @click="increment">+1</button><span data-ref="display">0</span>`;
  *     }
  *
  *     onConnect() {
@@ -44,12 +45,9 @@ import { stylesheet } from './stylesheet.js';
  *   BaseComponent.define('my-counter', MyCounter);
  */
 export class WebComponent extends HTMLElement {
-    static observed = [];
+    static observedAttributes = [];
     static formAssociated = false;
-
-    static get observedAttributes() {
-        return this.observed;
-    }
+    states = {};
 
     constructor() {
         super();
@@ -63,92 +61,39 @@ export class WebComponent extends HTMLElement {
         // Binder
         this.binder = null;
 
+        // Global
+        this.global = Global;
+
         // State
-        this.state = new State(this.initialState(), {
-            onChange: this.handleState.bind(this)
-        });
+        this.state = new State(this.states, this.onStateChange.bind(this));
 
-        // Adds reactive component event changes to the attributes of the element to re-render the contents.
-        for (let attribute of this.attributes) {
-            this.addEventListener('[' + attribute.name + ']', this.update.bind(this));
-        }
-    }
-
-    /** Override: return the initial values for `this.state`. */
-    initialState() {
-        return {};
-    }
-
-    handleState(keys) {
-        if (typeof this.onStateChange === 'function') {
-            this.onStateChange(keys, this.state);
-        } else {
-            this.update();
-        }
+        // Make sure reactive attributes don't work until after render has been called.
+        this.rendered = false;
     }
 
     async connectedCallback() {
-        if (typeof this.onConnect === 'function') {
-            await this.onConnect();
+        if (typeof this.handleConnect === 'function') {
+            await this.handleConnect();
         }
 
-        if (typeof this.render === 'function') {
-            await this.update();
-        }
-    }
+        await this.update();
 
-    /** Override: list of external CSS file URLs to adopt into this component. */
-    stylesheets() {
-        return [
-            'stylesheet.css',
-            'fontawesome/css/all.css'
-        ];
-    }
-
-    /** Override: return a CSS string scoped to this component's shadow root. */
-    styles() {
-        return '';
-    }
-
-    /** Override: return the HTML string for the component's shadow DOM. */
-    template() {
-        return '';
-    }
-
-    async update() {
-        let output = await this.render();
-
-        if (output) {
-            this.shadow.innerHTML = output;
-
-            if (this.binder) {
-                this.binder.refresh();
-            } else {
-                this.binder = new Binder(this.shadow, this);
-            }
-        }
-
-        // Stylesheet
-        const hrefs = this.stylesheets();
-
-        if (hrefs && hrefs.length) {
-            // Adopts asynchronously; inline `styles()` above still applies
-            // immediately so there's no unstyled flash for critical CSS.
-            stylesheet.adopt(this.shadow, hrefs).catch(error => console.error('WebComponent: failed to adopt stylesheets', error));
-        }
+        this.rendered = true;
     }
 
     async disconnectedCallback() {
+        console.log('disconnectedCallback');
+
         if (this.binder) {
-            this.binder.destroy();
+            //this.binder.destroy();
         }
 
         if (this.state) {
-            this.state.destroy();
+            //this.state.destroy();
         }
 
-        if (typeof this.onDisconnect === 'function') {
-            await this.onDisconnect();
+        if (typeof this.handleDisconnect === 'function') {
+            await this.handleDisconnect();
         }
     }
 
@@ -159,20 +104,69 @@ export class WebComponent extends HTMLElement {
     }
 
     attributeChangedCallback(name, value_old, value_new) {
-        console.log(`${name} changed from ${value_old} to ${value_new}`);
-        //value_old !== null ||
-        if (value_old === value_new) return;
+        if (!this.rendered || value_old === value_new) return;
 
-        let event = new CustomEvent('[' + name + ']', {
-            bubbles: false,
-            cancelable: true,
-            detail: {
-                value_old: value_old,
-                value_new: value_new
-            }
-        });
+        //console.log(`${name} changed from ${value_old} to ${value_new}`);
+        this.onAttributeChange(name, value_old, value_new);
+    }
 
-        // Dispatch the event
-        this.dispatchEvent(event);
+    async update() {
+        if (typeof this.render !== 'function') return;
+
+        this.shadow.innerHTML = await this.render();
+
+        if (this.binder) {
+            this.binder.refresh();
+        } else {
+            this.binder = new Binder(this.shadow, this);
+        }
+
+        // Stylesheet
+        const hrefs = this.stylesheets();
+
+        if (hrefs && hrefs.length) {
+            // Adopts asynchronously; inline `styles()` above still applies
+            // immediately so there's no unstyled flash for critical CSS.
+            Style.adopt(this.shadow, hrefs).catch(error => console.error('WebComponent: failed to adopt stylesheets', error));
+        }
+    }
+
+    async onAttributeChange(key, value_new, value_old) {
+        console.log('onAttributeChange', `${key} changed from ${value_old} to ${value_new}`);
+
+        let name= 'handle' + key.split('-').map(value => value.charAt(0).toUpperCase() + value.slice(1)).join('');
+
+        if (typeof this[name] === 'function') {
+            await this[name](key, value_new, value_old);
+        } else {
+            this.update();
+        }
+    }
+
+    async onStateChange(key, value_new, value_old) {
+        console.log('onStateChange', `${key} changed from ${value_old} to ${value_new}`);
+
+        let name= 'handle' + key.split('-').map(value => value.charAt(0).toUpperCase() + value.slice(1)).join('');
+
+        if (typeof this[name] === 'function') {
+            await this[name](key, value_new, value_old);
+        } else {
+            this.update();
+        }
+    }
+
+    /** Override: list of external CSS file URLs to adopt into this component. */
+    stylesheets() {
+        return [];
+    }
+
+    /** Override: return a CSS string scoped to this component's shadow root. */
+    styles() {
+        return '';
+    }
+
+    /** Override: return the HTML string for the component's shadow DOM. */
+    template() {
+        return '';
     }
 }

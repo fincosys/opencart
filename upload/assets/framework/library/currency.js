@@ -3,7 +3,7 @@ import { loader } from './loader.js';
 let currencies = await loader.storage('localisation/currency');
 
 export default class Currency {
-    static instance;
+    static instance = null;
 
     convert(value, from, to) {
         let currency_from = currencies.get(from);
@@ -83,3 +83,7 @@ export default class Currency {
         return Currency.instance;
     }
 }
+
+const currency = Currency.getInstance();
+
+export { currency };

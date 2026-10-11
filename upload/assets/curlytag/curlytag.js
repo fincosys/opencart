@@ -14,8 +14,6 @@ export class CurlyTag {
         this.directory = '';
         this.path = new Map();
         this.cache = new Map();
-        this.macro = new Map(); // name → { params, tokens, fn }
-        this._imported = {}; // alias → Map of macros (JS importMacros)
 
         this.handler = {
             assign: this.handleAssign.bind(this),
@@ -43,11 +41,7 @@ export class CurlyTag {
             raw: this.handleRaw.bind(this),
             endraw: this.handleEndRaw.bind(this),
             comment: this.handleComment.bind(this),
-            endcomment: this.handleEndComment.bind(this),
-            macro: this.handleMacro.bind(this),
-            endmacro: this.handleEndMacro.bind(this),
-            import: this.handleImport.bind(this),
-            from: this.handleFrom.bind(this)
+            endcomment: this.handleEndComment.bind(this)
         };
 
         this.openclose = {
@@ -531,6 +525,8 @@ export class CurlyTag {
     }
 
     async fetch(path) {
+        if (this.cache.has(path)) return this.cache.get(path);
+
         let file = this.directory + path + '.html';
         let namespace = '';
         let parts = path.replace(/\/+$/, '').split('/');
@@ -550,9 +546,13 @@ export class CurlyTag {
         let response = await fetch(file);
 
         if (response.status == 200) {
-            return await response.text();
+            let code = await response.text();
+
+            this.cache.set(path, code);
+
+            return this.cache.get(path);
         } else {
-            console.log(`[Template] Could not load template file ${path}!`);
+            throw new Error(`[Template] Could not load template file ${path}!`);
         }
 
         return '';
@@ -567,11 +567,9 @@ export class CurlyTag {
      * @returns {string} - Rendered template string
      */
     async render(path, data = {}) {
-        if (!this.cache.has(path)) {
-            this.cache.set(path, this.tokenize(await this.fetch(path)));
-        }
+        let code = await this.fetch(path);
 
-        return this.process(this.cache.get(path), data);
+        return this.parse(code, data);
     }
 
     // ─── Main render ────────────────────────────────────────────────────────
@@ -580,16 +578,6 @@ export class CurlyTag {
         let index = 0;
         let stack = [];
         let output = '';
-
-        // Handlers only receive the current token, not the full array — macro
-        // definitions need the latter to capture their own body as a token
-        // slice (see handleMacro), so stash it for the duration of this pass.
-        // Saved/restored (rather than just set) because calling a macro
-        // recurses into process() with the macro's own body tokens.
-
-        let previous_tokens = this._tokens;
-
-        this._tokens = tokens;
 
         while (index < tokens.length) {
             let token = tokens[index];
@@ -661,8 +649,6 @@ export class CurlyTag {
         if (pending?.type === 'output' && pending.output != null) {
             output += pending.output;
         }
-
-        this._tokens = previous_tokens;
 
         return output;
     }
@@ -1433,199 +1419,6 @@ export class CurlyTag {
         stack.push({
             type: 'output',
             output: this.parseFilter(top.value, top.filter, ctx),
-        });
-    }
-
-    /**
-     * Define a reusable template fragment with parameters.
-     *
-     * {% macro greet(name, greeting = 'Hello') %}
-     *   {{ greeting }}, {{ name }}!
-     * {% endmacro %}
-     *
-     * The body never renders inline where it's defined — only when called,
-     * e.g. {{ greet('Daniel') }} or {{ greet('Daniel', 'Hi') }}.
-     */
-    handleMacro(token, stack, ctx, index) {
-        let match = token.value.match(/^macro\s+(\w+)\s*\(([^)]*)\)\s*$/);
-
-        if (!match) {
-            console.log(`[Template] Invalid 'macro' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
-
-            stack.push({ type: 'macro' });
-
-            return token.end;
-        }
-
-        let [, name, paramList] = match;
-
-        let params = paramList.trim() ? paramList.split(',').map((param) => {
-            let [paramName, defaultExpression] = param.split('=');
-
-            return {
-                name: paramName.trim(),
-                default: defaultExpression !== undefined ? defaultExpression.trim() : undefined,
-            };
-        }) : [];
-
-        this.macro.set(name, {
-            params: params,
-            // The macro's body, captured from the current template's own
-            // token stream — see the `this._tokens` note in process().
-            tokens: this._tokens.slice(index + 1, token.end),
-        });
-
-        stack.push({ type: 'macro' });
-
-        // Skip straight to the matching endmacro — the body only renders
-        // (via callMacro/process) when the macro is actually called.
-        return token.end;
-    }
-
-    handleEndMacro(token, stack, ctx, index) {
-        let top = stack[stack.length - 1];
-
-        if (!top || top.type !== 'macro') {
-            console.log(`[Template] Unexpected 'endmacro' tag ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
-
-            return;
-        }
-
-        stack.pop();
-    }
-
-    /**
-     * Renders a macro's captured body with its parameters bound to the
-     * given (unevaluated) argument-list expression, e.g. `'Daniel', 'Hi'`
-     * from a call like `greet('Daniel', 'Hi')`.
-     */
-    callMacro(macro, argsExpression, ctx) {
-        let args = this.evaluate('[' + argsExpression + ']', ctx);
-
-        if (!Array.isArray(args)) {
-            args = [];
-        }
-
-        // A macro's body renders against its own isolated scope (just its
-        // parameters) rather than the caller's context, so it can't
-        // accidentally read or clobber unrelated variables.
-        let scope = {};
-
-        macro.params.forEach((param, i) => {
-            let value = args[i];
-
-            if (value === undefined && param.default !== undefined) {
-                value = this.evaluate(param.default, ctx);
-            }
-
-            scope[param.name] = value;
-        });
-
-        return this.process(macro.tokens, scope);
-    }
-
-    /**
-     * Like `evaluate()`, but first checks whether the expression is a call
-     * to a known macro — `name(args)` for a locally defined/`from`-imported
-     * macro, or `alias.name(args)` for one brought in via `{% import %}` —
-     * and if so renders it instead of treating it as a plain JS expression.
-     */
-    evaluateExpression(expression, ctx) {
-        let namespaced = expression.match(/^(\w+)\.(\w+)\(([\s\S]*)\)$/);
-        let plain = !namespaced && expression.match(/^(\w+)\(([\s\S]*)\)$/);
-
-        if (namespaced) {
-            let [, alias, name, args] = namespaced;
-            let macro = this._imported[alias]?.get(name);
-
-            if (macro) return this.callMacro(macro, args, ctx);
-        } else if (plain) {
-            let [, name, args] = plain;
-            let macro = this.macro.get(name);
-
-            if (macro) return this.callMacro(macro, args, ctx);
-        }
-
-        return this.evaluate(expression, ctx);
-    }
-
-    /**
-     * Fetches another template file and extracts every macro it defines,
-     * without rendering its other content, by swapping in a scratch macro
-     * registry for the duration of the (otherwise ordinary) render pass.
-     *
-     * NOTE: like handleInclude, this is async but process() invokes
-     * handlers synchronously (without awaiting), so — until that's
-     * addressed — an import/from tag's effect may not be ready before
-     * rendering continues past it. Treat this as matching handleInclude's
-     * existing limitation rather than a new one introduced here.
-     */
-    async extractMacros(path) {
-        let tokens = this.tokenize(await this.fetch(path));
-
-        let previous_macro = this.macro;
-
-        this.macro = new Map();
-
-        this.process(tokens, {});
-
-        let extracted = this.macro;
-
-        this.macro = previous_macro;
-
-        return extracted;
-    }
-
-    /**
-     * {% import 'macros/forms.html' as forms %}
-     *
-     * Every macro in the imported file becomes callable as
-     * {{ forms.name(args) }}.
-     */
-    async handleImport(token, stack, ctx, index) {
-        let match = token.value.match(/^import\s+(['"])(.+?)\1\s+as\s+(\w+)$/);
-
-        if (!match) {
-            console.log(`[Template] Invalid 'import' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
-
-            return;
-        }
-
-        let [, , path, alias] = match;
-
-        this._imported[alias] = await this.extractMacros(path);
-    }
-
-    /**
-     * {% from 'macros/forms.html' import input, select as dropdown %}
-     *
-     * Named macros become callable directly, without a namespace prefix:
-     * {{ input(...) }}, {{ dropdown(...) }}.
-     */
-    async handleFrom(token, stack, ctx, index) {
-        let match = token.value.match(/^from\s+(['"])(.+?)\1\s+import\s+(.+)$/);
-
-        if (!match) {
-            console.log(`[Template] Invalid 'from' syntax ${token.raw ? 'line ' + token.line + ' column ' + token.column + ': ' + token.raw : 'line ' + token.line + ' column ' + token.column}`);
-
-            return;
-        }
-
-        let [, , path, importList] = match;
-
-        let namespace = await this.extractMacros(path);
-
-        importList.split(',').forEach((entry) => {
-            let [name, alias] = entry.trim().split(/\s+as\s+/);
-
-            name = name.trim();
-            alias = (alias ?? name).trim();
-
-            if (namespace.has(name)) {
-                this.macro.set(alias, namespace.get(name));
-            } else {
-                console.log(`[Template] Macro '${name}' not found while importing from '${path}'`);
-            }
         });
     }
 

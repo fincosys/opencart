@@ -1,5 +1,5 @@
-import { WebComponent } from '../../index.js';
-import { loader, local } from '../../index.js';
+import { WebComponent } from '../../engine.js';
+import { loader, local } from '../../library.js';
 
 // Config
 const config = await loader.config('default');
@@ -16,7 +16,8 @@ const config = await loader.config('default');
  * optional required disabled
  */
 customElements.define('input-zone', class extends WebComponent {
-    static observed = ['country_id'];
+    static observedAttributes = ['country_id'];
+    static formAssociated = true;
 
     default = HTMLInputElement;
 
@@ -29,7 +30,7 @@ customElements.define('input-zone', class extends WebComponent {
     }
 
     async render() {
-        let html = '<select name="' + this.getAttribute('name') + '" id="' + this.getAttribute('input-id') + '" @change="onChange" class="form-select"';
+        let html = '<select name="' + this.getAttribute('name') + '" id="' + this.getAttribute('input-id') + '" @change="handleChange" class="form-select"';
 
         if (this.hasAttribute('required')) {
             html += ' required';
@@ -45,7 +46,7 @@ customElements.define('input-zone', class extends WebComponent {
 
         console.log(country);
 
-        if (country  instanceof Map) {
+        if (country instanceof Map) {
             for (let zone of country['zone']) {
                 html += '<option value="' + zone.zone_id + '"';
 
@@ -68,11 +69,11 @@ customElements.define('input-zone', class extends WebComponent {
         return html;
     }
 
-    async onConnect() {
+    async handleConnect() {
         this.default = this.innerHTML;
     }
 
-    onChange(e) {
+    handleChange(e) {
         this.value = e.target.value;
     }
 });

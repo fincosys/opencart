@@ -5,64 +5,49 @@ import { loader, ajax, customer, local } from '../index.js';
 const language = await loader.language('account/reset');
 
 export default class AccountReset extends WebComponent {
+    token = '';
+
     render() {
         return loader.template('account/reset', [ language ]);
     }
 
-    async onSubmit(e) {
+    async handleConnect() {
+        let json = await ajax.get('action.php?route=account/reset.token&language=' + local.get('language'));
+
+        if (json.has('token')) {
+            this.token = json.get('token');
+        }
+    }
+
+    async handleSubmit(e) {
         e.preventDefault();
 
         let form = new FormData(this.form);
 
         await ajax.post('action.php?route=account/reset&language=' + local.get('language') + '&reset_token=' + this.token, form, {
-            beforeSend: () => {
-                this.get('button').button('loading');
+            handleSend: () => {
+                this.form.state.set('submitting', true);
             },
-            onComplete: () => {
-                this.get('button').button('reset');
+            handleComplete: () => {
+                this.form.state.set('submitting', false);
             },
-            onSuccess: this.success.bind(this),
-            onError: (e) => {
+            handleSuccess: (json) => {
+                this.form.state.clear();
+
+                // Display error messages
+                if (json.has('error')) {
+                    this.form.state.set('error', json.get('error'));
+                }
+
+                // Display success message
+                if (json.has('success')) {
+                    this.state.set('success', json.get('success'));
+                }
+            },
+            handleError: (e) => {
                 console.log('onError', e);
             }
         });
-    }
-
-    async onConnect() {
-        this.token = await ajax.get('action.php?route=account/register.token&language=' + local.get('language'));
-    }
-
-    success(json) {
-        // Remove past error classes from inputs
-        this.form.querySelectorAll('.is-invalid').forEach(element => element.classList.remove('is-invalid'));
-        this.form.querySelectorAll('.invalid-feedback').forEach(element => element.classList.remove('d-block'));
-
-        // Display error messages
-        if (json.has('error')) {
-            for (let key in json.get('error')) {
-                let value = key.replaceAll('_', '-');
-
-                let input = this.form.querySelector('#input-' + value);
-
-                if (input) {
-                    input.classList.add('is-invalid');
-
-                    // If the element has inputs inside.
-                    input.querySelectorAll('.form-control, .form-select, .form-check-input, .form-check-label').forEach(element => element.classList.add('is-invalid'));
-                }
-
-                let error = this.form.querySelector('#error-' + value);
-
-                if (error) {
-                    error.classList.add('d-block');
-                }
-            }
-        }
-
-        // Display success message
-        if (json.has('success')) {
-            this.alert.prepend('<ui-alert type="success">' + json.get('success') + '</ui-alert>');
-        }
     }
 }
 

@@ -16,9 +16,7 @@ export default class Config {
     }
 
     async fetch(path) {
-        if (this.cache.has(path)) {
-            return this.cache.get(path);
-        }
+        if (this.cache.has(path)) return this.cache.get(path);
 
         let file = this.directory + path + '.json';
         let namespace = '';
@@ -45,7 +43,7 @@ export default class Config {
 
             return this.cache.get(path);
         } else {
-            console.log('Could not load config file ' + path);
+            throw new Error(`[Config] Could not load config file ${path}!`);
         }
 
         return undefined;
@@ -61,8 +59,6 @@ export default class Config {
 }
 
 const config = Config.getInstance();
-
-export { config };
 
 // Base
 const base = new URL(document.querySelector('base').href);
@@ -106,5 +102,8 @@ config.cache.set('default', new Map(Object.entries({
     config_gdpr_id: 0,
     config_stock_status_id: 4,
     config_affiliate_status: 1,
+    config_captcha: '',
     config_file_max_size: 3000
 })));
+
+export { config };

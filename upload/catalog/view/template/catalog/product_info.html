@@ -30,10 +30,6 @@
       <li>{{ product_code.code }}: <strong>{{ product_code.value }}</strong></li>
       {% endfor %}
 
-      {% if reward %}
-      <li>{{ text_reward }}: <strong>{{ reward }}</strong></li>
-      {% endif %}
-
       <li>{{ text_stock }}: <strong><span class="text-{% if stock %}success{% else %}danger{% endif %}">{{ stock_status }}</span></strong></li>
     </ul>
 
@@ -199,7 +195,7 @@
         <hr/>
         <h3>{{ text_subscription }}</h3>
         <div class="mb-3">
-          <select name="subscription_plan_id" id="input-subscription" @change="onChange" class="form-select" required>
+          <select name="subscription_plan_id" id="input-subscription" @change="handleChange" class="form-select" required>
             <option value="">{{ text_select }}</option>
 
             {% for subscription_plan in subscription_plans %}

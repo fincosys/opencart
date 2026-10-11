@@ -11,7 +11,11 @@ const language = await loader.language('checkout/register');
 const customer_groups = await loader.storage('customer/customer_group');
 
 customElements.define('checkout-register', class extends WebComponent {
-    token = '';
+    constructor() {
+        super();
+
+        this.token = '';
+    }
 
     async render(){
         let data = new Map();
@@ -21,30 +25,17 @@ customElements.define('checkout-register', class extends WebComponent {
         return loader.template('checkout/register', [ data,  language, config ]);
     }
 
-    async onConnect() {
-        this.token = await ajax.get('action.php?route=checkout/register.token');
+    async handleConnect() {
+        //if (customer.isLogged()) return;
+
+        let json = await ajax.get('action.php?route=checkout/register.token');
+
+        if (json.has('token')) {
+            this.token = json.get('token');
+        }
     }
 
-    onSubmit(e) {
-        e.preventDefault();
-
-        let form = new FormData(this.form);
-
-        ajax.post('action.php?route=checkout/register.save&language=' + local.get('language') + '&register_token=' + this.token, form, {
-            beforeSend: (request) => {
-                this.button.button('loading');
-            },
-            onComplete: (json) => {
-                this.button.button('reset');
-            },
-            onSuccess: this.success.bind(this),
-            onError: (e) => {
-                console.log('onError', e);
-            }
-        });
-    }
-
-    onChange() {
+    handleChange() {
         $('input[name=\'account\']').on('click', function() {
             if ($(this).val() == 1) {
                 $('#password').removeClass('d-none');
@@ -64,53 +55,51 @@ customElements.define('checkout-register', class extends WebComponent {
         $('input[name=\'account\']:checked').trigger('click');
     }
 
-    success(json) {
-        // Remove past error classes from inputs
-        this.form.querySelectorAll('.is-invalid').forEach(element => element.classList.remove('is-invalid'));
-        this.form.querySelectorAll('.invalid-feedback').forEach(element => element.classList.remove('d-block'));
+    async handleSubmit(e) {
+        e.preventDefault();
 
-        if (json.has('redirect')) {
-            location = json.get('redirect');
-        }
+        let form = new FormData(this.form);
 
-        // Display error messages
-        if (json.has('error')) {
-            for (let key in json['error']) {
-                let value = key.replaceAll('_', '-');
+        await ajax.post('action.php?route=checkout/register.save&language=' + local.get('language') + '&register_token=' + this.token, form, {
+            handleSend: () => {
+                this.form.state.set('submitting', true);
+            },
+            handleComplete: () => {
+                this.form.state.set('submitting', false);
+            },
+            handleSuccess: (json) => {
+                this.form.state.clear();
 
-                let input = this.form.querySelector('#input-' + value);
-
-                if (input) {
-                    input.classList.add('is-invalid');
-
-                    // If the element has inputs inside.
-                    input.querySelectorAll('.form-control, .form-select, .form-check-input, .form-check-label').forEach(element => element.classList.add('is-invalid'));
+                if (json.has('redirect')) {
+                    location = json.get('redirect');
                 }
 
-                let error = this.form.querySelector('#error-' + value);
-
-                if (error) {
-                    error.classList.add('d-block');
+                if (json.has('error')) {
+                    this.form.state.set('error', json.get('error'));
                 }
-            }
-        }
 
-        // Display success message
-        if (json.has('success')) {
-            this.alert.prepend('<ui-alert type="success">' + json.get('success') + '</ui-alert>');
+                // Display success message
+                if (json.has('success')) {
+                    this.form.state.set('success', json.get('success'));
+                    this.form.state.set('disabled', true);
 
-            if ($('#input-register').prop('checked')) {
-                $('input[name=\'account\']').prop('disabled', true);
-                $('#input-customer-group').prop('disabled', true);
-                $('#input-password').prop('disabled', true);
-                $('#input-captcha').prop('disabled', true);
-                $('#input-register-agree').prop('disabled', true);
-            }
+                    if ($('#input-register').prop('checked')) {
+                        $('input[name=\'account\']').prop('disabled', true);
+                        $('#input-customer-group').prop('disabled', true);
+                        $('#input-password').prop('disabled', true);
+                        $('#input-captcha').prop('disabled', true);
+                        $('#input-register-agree').prop('disabled', true);
+                    }
 
-            $('#input-shipping-method').val('');
-            $('#input-payment-method').val('');
+                    $('#input-shipping-method').val('');
+                    $('#input-payment-method').val('');
 
-            $('#checkout-confirm').load('action.php?route=checkout/confirm.confirm&language={{ language }}');
+                    //$('#checkout-confirm').load('action.php?route=checkout/confirm.confirm&language={{ language }}');
+                },
+                handleError: (e) => {
+                    console.log('onError', e);
+                }
+            });
         }
     }
 });

@@ -9,7 +9,6 @@ const language = await loader.language('cms/article_list');
 
 export default class ArticleList extends WebComponent {
 
-
     async render() {
         let data = {};
 
@@ -68,7 +67,7 @@ export default class ArticleList extends WebComponent {
         return loader.template('cms/article_list', [ data, language, config ]);
     }
 
-    onChange(e) {
+    handleChange(e) {
         this.getAttribute('sort');
     }
 }

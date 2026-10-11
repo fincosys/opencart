@@ -1,8 +1,8 @@
-import { WebComponent } from '../../index.js';
+import { WebComponent } from '../../engine.js';
 
 customElements.define('input-switch', class extends WebComponent {
-    observed = [];
-    formAssociated = true;
+    static observedAttributes = [];
+    static formAssociated = true;
 
     get checked() {
         return this.hasAttribute('checked');
@@ -14,7 +14,6 @@ customElements.define('input-switch', class extends WebComponent {
 
     render() {
         let html = '<div class="form-switch form-switch-lg">';
-
         html += '  <input type="hidden" name="' + this.getAttribute('name') + '" value=""/>';
         html += '  <input type="checkbox" name="' + this.getAttribute('name') + '" value="' + this.getAttribute('value') + '"';
 
@@ -22,7 +21,7 @@ customElements.define('input-switch', class extends WebComponent {
             html += ' id="' + this.getAttribute('input-id') + '"';
         }
 
-        html += ' @change="onChange" class="form-check-input"';
+        html += ' @change="handleChange" class="form-check-input"';
 
         if (this.checked) {
             html += ' checked';
@@ -42,7 +41,7 @@ customElements.define('input-switch', class extends WebComponent {
         return html;
     }
 
-    onChange(e) {
+    handleChange(e) {
         this.checked = e.target.checked;
     }
 });

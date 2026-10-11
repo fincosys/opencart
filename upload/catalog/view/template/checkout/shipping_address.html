@@ -13,7 +13,7 @@
   </div>
 
   <div id="shipping-existing" style="display: {% if addresses %}block{% else %}none{% endif %};">
-    <select name="address_id" id="input-shipping-address" class="form-select" @change="onChange">
+    <select name="address_id" id="input-shipping-address" class="form-select" @change="handleChange">
       <option value="">{{ text_select }}</option>
       {% for address in addresses %}
         <option value="{{ address.address_id }}"{% if address.address_id == address_id %} selected{% endif %}>{{ address.firstname }} {{ address.lastname }},{% if address.company %} {{ address.company }},{% endif %} {{ address.address_1 }}, {{ address.city }}, {{ address.zone }}, {{ address.country }}</option>
@@ -24,7 +24,7 @@
   <br/>
 
   <div id="shipping-new" style="display: {% if not addresses %}block{% else %}none{% endif %};">
-    <form id="form-shipping-address" @submit="onSubmit">
+    <form id="form-shipping-address" @submit="handleSubmit">
       <div class="row row-cols-1 row-cols-md-2">
         <div class="col mb-3">
           <label for="input-shipping-firstname" class="form-label">{{ entry_firstname }}</label >
@@ -62,17 +62,17 @@
 
         <div class="col mb-3">
           <label for="input-shipping-country" class="form-label">{{ entry_country }}</label>
-          <x-country name="country_id" value="{{ country_id }}" id="x-shipping-country" postcode="1" target="input-shipping-postcode" input-id="input-shipping-country" input-class="form-select" required>
+          <input-country name="country_id" value="{{ country_id }}" id="x-shipping-country" postcode="1" target="input-shipping-postcode" input-id="input-shipping-country" input-class="form-select" required>
             <option value="0">{{ text_select }}</option>
-          </x-country>
+          </input-country>
           <div id="error-shipping-country" class="invalid-feedback"></div>
         </div>
 
         <div class="col mb-3">
           <label for="input-shipping-zone" class="form-label">{{ entry_zone }}</label>
-          <x-zone name="zone_id" value="{{ zone_id }}" target="x-shipping-country" input-id="input-shipping-zone" input-class="form-select" required>
+          <input-zone name="zone_id" value="{{ zone_id }}" target="x-shipping-country" input-id="input-shipping-zone" input-class="form-select" required>
             <option value="0">{{ text_select }}</option>
-          </x-zone>
+          </input-zone>
           <div id="error-shipping-zone" class="invalid-feedback"></div>
         </div>
 

@@ -11,36 +11,36 @@ customElements.define('product-thumb', class extends WebComponent {
     async render() {
         let data = new Map();
 
-        let product = await loader.storage('product/product-' + this.getAttribute('product_id'));
+        let product = await loader.storage('product/product-' + parseInt(this.getAttribute('product_id')));
 
-        if (product instanceof Map && local.get('language') in product.get('description')) {
-            let description = product.get('description')[local.get('language')];
+        if (!product instanceof Map || !local.get('language') in product.get('description')) return;
 
-            // Special
-            data.set('special', '');
+        let description = product.get('description')[local.get('language')];
 
-            let discount = product.get('discounts').find(discount =>  discount.quantity == 1 && discount.customer_group_id == config.get('config_customer_group_id') && (discount.date_start == '0000-00-00' || Date(discount.date_start).getTime() >= Date.now()) && (discount.date_end == '0000-00-00' || Date(discount.date_end).getTime() <= Date.now()));
+        // Special
+        data.set('special', '');
 
-            if (discount) {
-                if (discount.type == 'F') {
-                    data.set('special', Number(discount.price));
-                } else if (discount.type == 'P') {
-                    data.set('special', product.get('price') - Number(product.get('price') * (discount.price / 100)));
-                } else if (discount.type == 'S') {
-                    data.set('special', product.get('price') - Number(discount.price));
-                }
+        let discount = product.get('discounts').find(discount =>  discount.quantity == 1 && discount.customer_group_id == config.get('config_customer_group_id') && (discount.date_start == '0000-00-00' || Date(discount.date_start).getTime() >= Date.now()) && (discount.date_end == '0000-00-00' || Date(discount.date_end).getTime() <= Date.now()));
+
+        if (discount) {
+            if (discount.type == 'F') {
+                data.set('special', Number(discount.price));
+            } else if (discount.type == 'P') {
+                data.set('special', Number(product.get('price')) - Number(product.get('price') * (discount.price / 100)));
+            } else if (discount.type == 'S') {
+                data.set('special', Number(product.get('price')) - Number(discount.price));
             }
-
-            data.set('tax', '');
-
-            if (config.get('config_tax')) {
-                data.set('tax', tax.getTax(data.get('special') ? data.get('special') : product.get('price'), product.get('tax_class_id')));
-            }
-
-            data.set('currency', local.get('currency'));
-
-            return await loader.template('catalog/product_thumb', [ product, description, data, language, config ]);
         }
+
+        data.set('tax', '');
+
+        if (config.get('config_tax')) {
+            data.set('tax', tax.getTax(data.get('special') ? data.get('special') : product.get('price'), product.get('tax_class_id')));
+        }
+
+        data.set('currency', local.get('currency'));
+
+        return await loader.template('catalog/product_thumb', [ product, description, data, language, config ]);
     }
 
     addToCart(e) {
@@ -49,59 +49,33 @@ customElements.define('product-thumb', class extends WebComponent {
         let form = new FormData(this.form);
 
         ajax.post('action.php?route=checkout/cart.add', form, {
-            beforeSend: () => {
-
+            handleSend: () => {
+                this.form.state.set('submitting', true);
             },
-            onComplete: () => {
-
+            handleComplete: () => {
+                this.form.state.set('submitting', false);
             },
-            onSuccess: (json) => {
-                console.log('onSuccess', json);
+            handleSuccess: (json) => {
+                this.form.state.clear();
 
-                // Remove past error classes from inputs
-                this.form.querySelectorAll('.is-invalid').forEach(element => element.classList.remove('is-invalid'));
-                this.form.querySelectorAll('.invalid-feedback').forEach(element => element.classList.remove('d-block'));
-
-                if ('redirect' in json) {
-                    location = json['redirect'];
+                if (json.has('redirect')) {
+                    location = json.get('redirect');
                 }
 
                 // Display error messages
-                if (json.get('error')) {
-                    for (let key in json['error']) {
-                        let value = key.replaceAll('_', '-');
-
-                        let input = target.querySelector('#input-' + value);
-
-                        if (input) {
-                            input.classList.add('is-invalid');
-
-                            // If the element has inputs inside.
-                            input.querySelectorAll('.form-control, .form-select, .form-check-input, .form-check-label').forEach(element => element.classList.add('is-invalid'));
-                        }
-
-                        let error = target.querySelector('#error-' + value);
-
-                        if (error) {
-                            error.classList.add('d-block');
-                        }
-                    }
+                if (json.has('error')) {
+                    this.form.state.set('error', json.get('error'));
                 }
 
                 // Display success message
                 if (json.has('success')) {
-                    this.alert.prepend('<ui-alert type="success">' + json.get('success') + '</ui-alert>');
+                    this.alert.append('<ui-alert type="success">' + json.get('success') + '</ui-alert>');
 
-                    let item = [];
+                   // cart.add(cart);
 
-                    cart.add(cart);
-
-                    let button = document.querySelector('#cart > button');
-
-                    button.click();
                 }
             },
-            onError: (e) => {
+            handleError: (e) => {
                 console.log('onError', e);
             }
         });

@@ -16,14 +16,14 @@ if (session.has('cart')) {
 }
 
 export default class Cart {
-    static instance;
+    static instance = null;
 
     constructor() {
         this.data = new Map();
         this.items = new Map();
 
         for (let item of items) {
-            this.add(item.product_id, item.quantity, [...item.option], item.subscription_plan_id);
+            this.add(item.product_id, item.quantity, [ ...item.option ], item.subscription_plan_id);
         }
     }
 
@@ -47,14 +47,14 @@ export default class Cart {
         let item = {
             product_id: product_id,
             quantity: quantity,
-            option: option ? [...option] : [],
+            option: option ? [ ...option ] : [],
             subscription_plan_id: subscription_plan_id
         };
 
         this.items.set(key, item);
 
         // Update the session
-        session.set('cart', [...this.items.values()]);
+        session.set('cart', [ ...this.items.values() ]);
     }
 
     update(key, quantity) {
@@ -63,7 +63,7 @@ export default class Cart {
             this.items.set(key, Object.assign(this.items.get(key), { quantity: quantity }));
 
             // Update the session
-            session.set('cart', [...this.items.values()]);
+            session.set('cart', [ ...this.items.values() ]);
         }
     }
 
@@ -71,13 +71,13 @@ export default class Cart {
         this.items.delete(key);
 
         // Update the session
-        session.set('cart', [...this.items.values()]);
+        session.set('cart', [ ...this.items.values() ]);
     }
 
     getProducts() {
         let product_data = [];
 
-        for (let item of [...this.items.values()]) {
+        for (let item of [ ...this.items.values() ]) {
             let stock_status = true;
 
             let product_info = this.data.get(item.product_id);
@@ -91,7 +91,7 @@ export default class Cart {
 
                 let option_data = [];
 
-                for (let [key, value] of [...item.option]) {
+                for (let [key, value] of [ ...item.option ]) {
                     // Get option info
                     let option_info = product_info.options.find(option => option.product_option_id == key);
 
@@ -232,15 +232,6 @@ export default class Cart {
                     minimum = false;
                 }
 
-                // Reward Points
-                let reward = 0;
-
-                let reward_info = product_info.rewards.find(reward => reward.customer_group_id == config.config_customer_group_id);
-
-                if (reward_info) {
-                    reward = Number(reward_info.points);
-                }
-
                 product_data.push({
                     //key: item.key,
                     product_id: product_info.product_id,
@@ -260,8 +251,6 @@ export default class Cart {
                     tax_class_id: Number(product_info.tax_class_id),
                     price: Number(price),
                     total: Number(price * item.quantity),
-                    reward: Number(reward * item.quantity),
-                    points: Number(product_info.points ? (product_info.points + option_points) * item.quantity : 0),
                     weight: Number((product_info.weight + option_weight) * item.quantity),
                     weight_class_id: Number(product_info.weight_class_id),
                     length: Number(product_info.length),

@@ -8,10 +8,8 @@ const config = await loader.config('default');
 const language = await loader.language('account/edit');
 
 export default class AccountEdit extends WebComponent {
-    token = '';
-
     async render() {
-        if (!customer.isLogged()) return;
+        //if (!customer.isLogged()) return;
 
         let data = new Map();
 
@@ -20,63 +18,42 @@ export default class AccountEdit extends WebComponent {
         data.set('email', customer.getEmail());
         data.set('telephone', customer.getTelephone());
 
-        data.set('token', customer.getToken());
-
         return loader.template('account/edit', [ data, language, config ]);
     }
 
-    async onConnect() {
-        if (!customer.isLogged()) return;
-
-        this.token = await ajax.get('action.php?route=account/edit.token&language=' + local.get('language') + '&customer_token=' + customer.getToken());
-    }
-
-    async onSubmit(e) {
+    async handleSubmit(e) {
         e.preventDefault();
+
+        //if (!customer.isLogged()) return;
 
         let form = new FormData(this.form);
 
         await ajax.post('action.php?route=account/edit.save&language=' + local.get('language') + '&customer_token=' + customer.getToken(), form, {
-            beforeSend: () => {
-                this.submitter.button('loading');
+            handleSend: () => {
+                this.form.state.set('submitting', true);
             },
-            onComplete: (json) => {
-                this.submitter.button('reset');
+            handleComplete: () => {
+                this.form.state.set('submitting', false);
             },
-            onSuccess: this.success.bind(this),
-            onError: (e) => {
+            handleSuccess: (json) => {
+                this.form.state.clear();
+
+                // Display error messages
+                if (json.has('error')) {
+                    this.form.state.set('error', json.get('error'));
+                }
+
+                // Display success message
+                if (json.has('success')) {
+                    this.state.set('success', json.get('success'));
+
+                    this.update();
+                }
+            },
+            handleError: (e) => {
                 console.log('onError', e);
             }
         });
-    }
-
-    success(json) {
-        // Remove past error classes from inputs
-        this.form.querySelectorAll('.is-invalid').forEach(element => element.classList.remove('is-invalid'));
-        this.form.querySelectorAll('.invalid-feedback').forEach(element => element.classList.remove('d-block'));
-
-        // Display error messages
-        if (json.get('error')) {
-            for (let key in json.get('error')) {
-                let value = key.replaceAll('_', '-');
-
-                let input = this.form.querySelector('#input-' + value);
-
-                if (input) {
-                    input.classList.add('is-invalid');
-
-                    // If the element has inputs inside.
-                    input.querySelectorAll('.form-control, .form-select, .form-check-input, .form-check-label').forEach(element => element.classList.add('is-invalid'));
-                }
-
-                this.form.querySelector('#error-' + value).classList.add('d-block');
-            }
-        }
-
-        // Display success message
-        if (json.has('success')) {
-            this.alert.prepend('<ui-alert type="success">' + json.get('success') + '</ui-alert>');
-        }
     }
 }
 

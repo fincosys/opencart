@@ -1,20 +1,17 @@
-import { WebComponent } from '../../index.js';
+import { WebComponent } from '../../engine.js';
 
 customElements.define('ui-alert', class extends WebComponent {
-    static observed = ['type'];
+    static observedAttributes = ['type'];
+    timer = null;
 
     render() {
         if (typeof timer != 'undefined') {
             clearInterval(timer);
         }
 
-        let timer = setInterval(this.timeout, 500);
+        this.timer = setInterval(this.timeout, 500);
 
-        let type = 'primary';
-
-        if (this.hasAttribute('type')) {
-            type = this.getAttribute('type');
-        }
+        let type = (this.getAttribute('type') || 'primary').replace(/[^a-z-]/gi, '');
 
         let icon = '';
 
@@ -39,10 +36,18 @@ customElements.define('ui-alert', class extends WebComponent {
                 break;
         }
 
-        return '<ui-alert type="success">' + this.innerHTML + '</ui-alert>';
+        return '<div class="alert alert-' + type + '">' + icon + ' ' + this.innerHTML + '</div>';
     }
 
-    timeout() {
-        clearInterval(timer);
+    handleConnect() {
+        let timeout = parseInt(this.getAttribute('timeout'));
+
+        if (timeout > 0) {
+            this.timer = setTimeout(() => this.remove(), timeout);
+        }
+    }
+
+    handleDisconnect() {
+        clearTimeout(this.timer);
     }
 });

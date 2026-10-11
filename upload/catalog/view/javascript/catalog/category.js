@@ -12,32 +12,28 @@ export default class CatalogCategory extends WebComponent {
     async render() {
         let data = new Map();
 
-        let category_id = 0;
+        let path = this.getAttribute('path').replace(/[^0-9_]+/);
 
-        let path = this.getAttribute('path');
+        if (!path) return;
 
-        if (path.indexOf('_') !== -1) {
-            category_id = path.split('_').pop();
-        } else {
-            category_id = path;
+        let category = await loader.storage('category/category-' + path);
+
+        if (!category instanceof Map || !local.get('language') in category.get('description')) return;
+
+        let description = category.get('description')[local.get('language')];
+
+        data.set('path', path);
+
+        data.set('categories', []);
+
+        for (let children of category.get('children')) {
+            data.get('categories').push({
+                name: children.description[local.get('language')].name,
+                path: children.path
+            });
         }
 
-        let category = await loader.storage('category/category-' + category_id);
-
-        if (category instanceof Map && local.get('language') in category.get('description')) {
-            let description = category.get('description')[local.get('language')];
-
-            data.set('categories', []);
-
-            for (let children of category.get('children')) {
-                data.get('categories').push({
-                    name: children.description[local.get('language')].name,
-                    path: children.path
-                });
-            }
-
-            return loader.template('catalog/category', [ data, category, description, language, config ]);
-        }
+        return loader.template('catalog/category', [ data, category, description, language, config ]);
     }
 }
 

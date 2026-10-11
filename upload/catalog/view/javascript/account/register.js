@@ -8,70 +8,71 @@ const config = await loader.config('default');
 const language = await loader.language('account/register');
 
 export default class AccountRegister extends WebComponent {
-    token = '';
+    constructor() {
+        super();
+
+        this.token = '';
+    }
 
     async render() {
-        let data = new Map();
+        //if (!customer.isLogged()) return;
 
-        data.set('token', this.token);
+        if (this.state.has('success')) {
+            `<ui-toast></ui-toast>`;
 
-        return loader.template('account/register', [ data, language, config ]);
+            return `<div class="success">${this.state.get('success')}</div>`;
+        }
+
+        return loader.template('account/register', [ language, config ]);
     }
 
-    async onConnect() {
-        if (customer.isLogged()) return;
+    async handleConnect() {
+        //if (customer.isLogged()) return;
 
-        this.token = await ajax.get('action.php?route=account/register.token&language=' + local.get('language'));
+        let json = await ajax.get('action.php?route=account/register.token&language=' + local.get('language'));
+
+        if (json.has('token')) {
+            this.token = json.get('token');
+        }
     }
 
-    async onSubmit(e) {
+    async handleSubmit(e) {
         e.preventDefault();
 
-        if (customer.isLogged()) return;
+        //if (customer.isLogged()) return;
 
         let form = new FormData(this.form);
 
-        await ajax.post('action.php?route=account/register&language=' + local.get('language') + '&register_token=' + this.token, form, {
-            beforeSend: () => {
-                this.submitter.state.add('loading');
+        await ajax.post('action.php?route=account/register.save&language=' + local.get('language') + '&register_token=' + this.token, form, {
+            handleSend: () => {
+                this.form.state.set('submitting', true);
             },
-            onComplete: (json) => {
-                this.submitter.state.delete('loading');
+            handleComplete: () => {
+                this.form.state.set('submitting', false);
             },
-            onSuccess: this.success.bind(this),
-            onError: (e) => {
+            handleSuccess: (json) => {
+                this.form.state.clear();
+
+                // Display error messages
+                if (json.has('error')) {
+                    this.form.state.set('error', json.get('error'));
+                }
+
+                // Display success message
+                if (json.has('success')) {
+                    this.state.set('success', json.get('success'));
+
+                    this.update();
+                }
+            },
+            handleError: (e) => {
                 console.log('onError', e);
             }
         });
     }
 
-    success(json) {
-        // Remove past error classes from inputs
-        this.form.querySelectorAll('.is-invalid').forEach(element => element.classList.remove('is-invalid'));
-        this.form.querySelectorAll('.invalid-feedback').forEach(element => element.classList.remove('d-block'));
-
-        // Display error messages
-        if (json.has('error')) {
-            for (let key in json.get('error')) {
-                let value = key.replaceAll('_', '-');
-
-                // If the element has inputs inside.
-                this.form.querySelector('#input-' + value).classList.add('is-invalid');
-                this.form.querySelectorAll('.form-control, .form-select, .form-check-input, .form-check-label').forEach(element => element.classList.add('is-invalid'));
-                this.form.querySelector('#error-' + value).classList.add('d-block');
-            }
-        }
-
-        // Display success message
-        if (json.has('success')) {
-            this.alert.prepend('<ui-alert type="success">' + json.get('success') + '</ui-alert>');
-        }
-    }
-
-    onAgree(e) {
-        console.log(e);
-
-        //this.ref('agree');
+    handleAgree(e) {
+        this.submitter.toggleAttribute('disabled', !e.target.hasAttribute('checked'));
     }
 }
 

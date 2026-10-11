@@ -1,5 +1,5 @@
-import { WebComponent } from '../../index.js';
-import { loader, local } from '../../index.js';
+import { WebComponent } from '../../engine.js';
+import { loader, local } from '../../library.js';
 
 // Config
 const config = await loader.config('default');
@@ -19,7 +19,8 @@ const countries = await loader.storage('localisation/country');
  * optional required disabled
  */
 customElements.define('input-country', class extends WebComponent {
-    static observed = ['value'];
+    static observedAttributes = ['value'];
+    static formAssociated = true;
 
     default = '';
     countries = [];
@@ -34,7 +35,11 @@ customElements.define('input-country', class extends WebComponent {
     }
 
     async render() {
-        let html = '<select name="' + this.getAttribute('name') + '" id="' + this.getAttribute('input-id') + '" @change="onChange" class="form-select"';
+        if (config.has('config_contry_id')) {
+
+        }
+
+        let html = '<select name="' + this.getAttribute('name') + '" id="' + this.getAttribute('input-id') + '" @change="handleChange" class="form-select"';
 
         if (this.hasAttribute('required')) {
             html += ' required';
@@ -75,9 +80,8 @@ customElements.define('input-country', class extends WebComponent {
         return html;
     }
 
-    async onConnect() {
+    async handleConnect() {
         this.default = this.innerHTML;
-        this.countries = countries;
         this.target = this.hasAttribute('target') ? document.getElementById(this.getAttribute('target')) : '';
         this.postcode = this.hasAttribute('postcode') ? document.getElementById(this.getAttribute('postcode')) : '';
     }

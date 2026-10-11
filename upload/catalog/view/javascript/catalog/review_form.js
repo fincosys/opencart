@@ -1,4 +1,4 @@
-import { WebComponent } from '../index.js';
+import {WebComponent} from '../index.js';
 import { loader, ajax, customer, local } from '../index.js';
 
 // Config
@@ -8,58 +8,54 @@ const config = await loader.config('default');
 const language = await loader.language('catalog/review');
 
 customElements.define('review-form', class extends WebComponent {
-    async render(){
+    constructor() {
+        super();
+
+        this.token = '';
+    }
+
+    async render() {
         let data = new Map();
 
-        return loader.template('catalog/review_form', [ data, language, config ]);
+        return loader.template('catalog/review_form', [data, language, config]);
     }
 
-    onConnect() {
-        this.token = ajax.get('action.php?route=account/review.token&language=' + local.get('language') + '&customer_token=' + customer.getToken());
+    async handleConnect() {
+        let json = await ajax.get('action.php?route=account/review.token&language=' + local.get('language') + '&customer_token=' + customer.getToken());
+
+        if (json.has('token')) {
+            this.token = json.get('token');
+        }
     }
 
-    onSubmit(e) {
+    handleSubmit(e) {
         e.preventDefault();
 
         let form = new FormData(this.form);
 
         ajax.post('action.php?route=catalog/review.write&language=' + local.get('language') + '&review_token=' + this.token + '&product_id=' + this.getAttribute('product_id'), form, {
-            beforeSend: () => {
-                this.button.button('loading');
+            handleSend: () => {
+                this.form.state.set('submitting', true);
             },
-            complete: () => {
-                this.button.button('reset');
+            handleComplete: () => {
+                this.form.state.set('submitting', false);
             },
-            success: this.success,
-            error: (xhr, ajaxOptions, thrownError) => {
+            handleSuccess: (json) => {
+                this.form.state.clear();
+
+                if (json.has('error')) {
+                    this.form.state.set('error', json.get('error'));
+                }
+
+                if (json.has('success')) {
+                    this.form.state.set('success', json.get('success'));
+
+                    this.update();
+                }
+            },
+            handleError: (xhr, ajaxOptions, thrownError) => {
                 console.log(thrownError + "\r\n" + xhr.statusText + "\r\n" + xhr.responseText);
             }
         });
-    }
-
-    success(json) {
-        $('.alert-dismissible').remove();
-
-        // Remove past error classes from inputs
-        this.form.querySelectorAll('.is-invalid').forEach(element => element.classList.remove('is-invalid'));
-        this.form.querySelectorAll('.invalid-feedback').forEach(element => element.classList.remove('d-block'));
-
-        if (json['error']) {
-            if (json['error']['warning']) {
-                this.alert.prepend('<ui-alert type="danger">' + json['error']['warning'] + '</ui-alert>');
-            }
-
-            for (let key in json['error']) {
-                $('#input-' + key.replaceAll('_', '-')).addClass('is-invalid').find('.form-control, .form-select, .form-check-input, .form-check-label').addClass('is-invalid');
-                $('#error-' + key.replaceAll('_', '-')).html(json['error'][key]).addClass('d-block');
-            }
-        }
-
-        if (json.has('success')) {
-            this.alert.prepend('<div class="alert alert-success alert-dismissible"><i class="fa-solid fa-circle-exclamation"></i> ' + json.get('success') + '</ui-alert>');
-
-            this.form.querySelector('#input-text').value = '';
-            this.form.querySelector('#input-rating input[type=\'radio\']').checked = false;
-        }
     }
 });

@@ -1,4 +1,4 @@
-import { WebComponent } from '../../index.js';
+import { WebComponent } from '../../engine.js';
 
 customElements.define('input-upload', class extends WebComponent {
     static observed = [
@@ -8,6 +8,7 @@ customElements.define('input-upload', class extends WebComponent {
         'required',
         'readonly'
     ];
+    static formAssociated = true;
 
     get name() {
         return this.getAttribute('name');
@@ -50,7 +51,7 @@ customElements.define('input-upload', class extends WebComponent {
     }
 
     render() {
-
+        return '<form enctype="multipart/form-data" id="form-upload" style="display: none;"><input type="file" name="file" value=""/></form>';
         // data-oc-toggle="upload"
         // data-oc-url="{{ upload }}"
         // data-oc-target="#input-custom-field-{{ custom_field.custom_field_id }}"
@@ -60,7 +61,7 @@ customElements.define('input-upload', class extends WebComponent {
         let html = '';
 
         html += '<div class="input-group">';
-        html += '  <button type="button" class="btn btn-primary" @click="onClick"><i class="fa-solid fa-upload"></i> {{ button_upload }}</button>';
+        html += '  <button type="button" class="btn btn-primary" @click="handleClick"><i class="fa-solid fa-upload"></i> {{ button_upload }}</button>';
         html += '  <input type="text" name="' + this.name + '" value="' + this.value + '" id="' + this.getAttribute('input-id') + '" class="form-control" data-on="click:onClick"/>';
         html += '  <button type="button" class="btn btn-outline-secondary" @click="download" disabled><i class="fa-solid fa-download"></i></button>';
         html += '  <button type="button" class="btn btn-outline-danger" @click="cancel" disabled><i class="fa-solid fa-eraser"></i></button>';
@@ -69,7 +70,7 @@ customElements.define('input-upload', class extends WebComponent {
         return html;
     }
 
-    onClick(e) {
+    handleClick(e) {
         if (!this.disabled) {
             let form = document.getElementById('#form-upload');
 
@@ -89,11 +90,11 @@ customElements.define('input-upload', class extends WebComponent {
         }
     }
 
-    onchange(e) {
+    handleChange(e) {
         this.checked = e.target.checked ? 1 : 0;
     }
 
-    onchecked(e) {
+    handleChecked(e) {
         this.element.checked = e.detail.value_new == 1 ? true : false;
     }
 
@@ -126,14 +127,10 @@ customElements.define('input-upload', class extends WebComponent {
 
         $($(this).attr('data-oc-target')).val('');
     }
-});
 
-customElements.define('form-upload', class extends WebComponent {
-    render() {
-        return '<form enctype="multipart/form-data" id="form-upload" style="display: none;"><input type="file" name="file" value=""/></form>';
-    }
 
-    onClick() {
+
+    handleClick() {
         if (typeof timer != 'undefined') {
             clearInterval(timer);
         }

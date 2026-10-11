@@ -1,5 +1,5 @@
 export default class Session {
-    static instance;
+    static instance = null;
 
     async get(key) {
         return await JSON.parse(sessionStorage.getItem(key));
@@ -10,7 +10,7 @@ export default class Session {
     }
 
     has(key) {
-        return sessionStorage.getItem(key) !== null;
+        return sessionStorage.getItem(key) !== null;weight
     }
 
     delete(key) {

@@ -1,7 +1,7 @@
 import { load } from '../../yaml/js-yaml.js';
 
 export default class Language {
-    static instance;
+    static instance = null;
 
     constructor() {
         this.directory = '';
@@ -18,9 +18,7 @@ export default class Language {
     }
 
     async fetch(path) {
-        if (this.cache.has(path)) {
-            return this.cache.get(path);
-        }
+        if (this.cache.has(path)) return this.cache.get(path);
 
         let file = this.directory + path + '.yaml';
         let namespace = '';
@@ -47,7 +45,7 @@ export default class Language {
 
             return this.cache.get(path);
         } else {
-            console.log('Could not load language file ' + path);
+            throw new Error(`[Language] Could not load language file ${path}!`);
         }
 
         return undefined;

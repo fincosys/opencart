@@ -8,22 +8,16 @@ namespace Opencart\Catalog\Controller\Account;
  * @package Opencart\Catalog\Controller\Account
  */
 class Login extends \Opencart\System\Engine\Controller {
-	/**
-	 * Index
-	 *
-	 * @return void
-	 */
-	public function index(): void {
+	public function token(): void {
 		$json = [];
 
 		$this->session->data['login_token'] = oc_token(26);
 
-		$json['login_token'] = $this->session->data['login_token'];
+		$json['token'] = $this->session->data['login_token'];
 
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
-
 
 	/**
 	 * Login
@@ -85,8 +79,7 @@ class Login extends \Opencart\System\Engine\Controller {
 				'firstname'         => $customer_info['firstname'],
 				'lastname'          => $customer_info['lastname'],
 				'email'             => $customer_info['email'],
-				'telephone'         => $customer_info['telephone'],
-				'custom_field'      => $customer_info['custom_field']
+				'telephone'         => $customer_info['telephone']
 			];
 
 			$json['customer'] = $this->session->data['customer'];
@@ -140,6 +133,7 @@ class Login extends \Opencart\System\Engine\Controller {
 	 *
 	 * @return void
 	 */
+	/*
 	public function token(): void {
 		$this->load->language('account/login');
 
@@ -207,7 +201,7 @@ class Login extends \Opencart\System\Engine\Controller {
 			$this->response->redirect($this->url->link('account/login', 'language=' . $this->config->get('config_language'), true));
 		}
 	}
-
+    */
 	/**
 	 * Validate
 	 *
